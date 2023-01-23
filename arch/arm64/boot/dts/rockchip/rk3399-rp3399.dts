@@ -1,9 +1,9 @@
 /dts-v1/;
-#include "dt-bindings/pwm/pwm.h"
-#include "dt-bindings/input/input.h"
+#include <dt-bindings/pwm/pwm.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/usb/pd.h>
 #include "rk3399.dtsi"
 #include "rk3399-opp.dtsi"
-// #include "rk3399-sapphire.dtsi"
 
 / {
 
@@ -147,6 +147,19 @@
 		};
 	};
 
+	vbus_typec: vbus_typec {
+		compatible = "regulator-fixed";
+		enable-active-high;
+		gpio = <&gpio4 26 GPIO_ACTIVE_HIGH>;
+		regulator-name = "vbus_typec";
+		regulator-min-microvolt = <5000000>;
+		regulator-max-microvolt = <5000000>;
+
+		regulator-state-mem {
+			regulator-off-in-suspend;
+		};
+	};
+
 	sdio_pwrseq: sdio-pwrseq {
 		compatible = "mmc-pwrseq-simple";
 		clocks = <&rk808 1>;
@@ -166,8 +179,6 @@
 
 &cdn_dp {
 	status = "okay";
-	extcon = <&fusb0>;
-	phys = <&tcphy0_dp>;
 };
 
 &cpu_l0 {
@@ -502,14 +513,78 @@
 };
 
 &i2c4 {
+	status = "okay";
+	i2c-scl-rising-time-ns = <600>;
+	i2c-scl-falling-time-ns = <20>;
+
+	mpu6500@68 {
+		status = "okay";
+		compatible = "invensense,mpu6500";
+		reg = <0x68>;
+		irq-gpio = <&gpio1 22 IRQ_TYPE_EDGE_RISING>;
+		mpu-int_config = <0x10>;
+		mpu-level_shifter = <0>;
+		mpu-orientation = <0 1 0 1 0 0 0 0 1>;
+		orientation-x= <1>;
+		orientation-y= <0>;
+		orientation-z= <0>;
+		mpu-debug = <1>;
+	};
+
 	fusb0: fusb30x@22 {
 		compatible = "fairchild,fusb302";
 		reg = <0x22>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&fusb0_int>;
-		int-n-gpios = <&gpio1 2 GPIO_ACTIVE_HIGH>;
-		vbus-5v-gpios = <&gpio4 26 GPIO_ACTIVE_HIGH>;
+		interrupt-parent = <&gpio1>;
+		interrupts = <2 GPIO_ACTIVE_LOW>;
+		vbus-supply = <&vbus_typec>;
 		status = "okay";
+
+		connector {
+			compatible = "usb-c-connector";
+			data-role = "dual";
+			label = "USB-C";
+			op-sink-microwatt = <1000000>;
+			power-role = "dual";
+			sink-pdos =
+				<PDO_FIXED(5000, 2500, PDO_FIXED_USB_COMM)>;
+			source-pdos =
+				<PDO_FIXED(5000, 1400, PDO_FIXED_USB_COMM)>;
+			try-power-role = "sink";
+
+			ports {
+				#address-cells = <1>;
+				#size-cells = <0>;
+
+				port@0 {
+					reg = <0>;
+
+					usbc_hs: endpoint {
+						remote-endpoint =
+							<&u2phy0_typec_hs>;
+					};
+				};
+
+				port@1 {
+					reg = <1>;
+
+					usbc_ss: endpoint {
+						remote-endpoint =
+							<&tcphy0_typec_ss>;
+					};
+				};
+
+				port@2 {
+					reg = <2>;
+
+					usbc_dp: endpoint {
+						remote-endpoint =
+							<&tcphy0_typec_dp>;
+					};
+				};
+			};
+		};
 	};
 };
 
@@ -517,6 +592,19 @@
 	#sound-dai-cells = <0>;
 	rockchip,playback-channels = <8>;
 	rockchip,capture-channels = <8>;
+	status = "okay";
+};
+
+&i2s2 {
+	#sound-dai-cells = <0>;
+	status = "okay";
+};
+
+&tsadc {
+	/* tshut mode 0:CRU 1:GPIO */
+	rockchip,hw-tshut-mode = <1>;
+	/* tshut polarity 0:LOW 1:HIGH */
+	rockchip,hw-tshut-polarity = <1>;
 	status = "okay";
 };
 
@@ -676,8 +764,23 @@
 };
 
 &tcphy0 {
-	extcon = <&fusb0>;
 	status = "okay";
+};
+
+&tcphy0_dp {
+	port {
+		tcphy0_typec_dp: endpoint {
+			remote-endpoint = <&usbc_dp>;
+		};
+	};
+};
+
+&tcphy0_usb3 {
+	port {
+		tcphy0_typec_ss: endpoint {
+			remote-endpoint = <&usbc_ss>;
+		};
+	};
 };
 
 &tcphy1 {
@@ -686,7 +789,6 @@
 
 &u2phy0 {
 	status = "okay";
-	extcon = <&fusb0>;
 
 	u2phy0_otg: otg-port {
 		status = "okay";
@@ -694,6 +796,12 @@
 
 	u2phy0_host: host-port {
 		status = "okay";
+	};
+
+	port {
+		u2phy0_typec_hs: endpoint {
+			remote-endpoint = <&usbc_hs>;
+		};
 	};
 };
 
@@ -725,7 +833,6 @@
 
 &usbdrd3_0 {
 	status = "okay";
-	extcon = <&fusb0>;
 };
 
 &usbdrd3_1 {
